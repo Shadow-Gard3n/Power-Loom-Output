@@ -1,0 +1,76 @@
+CONTRIBUTION OF DARSH JASORIA
+=============================
+Group      : G237
+Problem    : MP212 - Power Loom Output (Kochi)
+Member     : Darsh Jasoria (S24CSEU0844), GitHub: Darsh-Jasoria
+Role       : Service lead (prediction API, request rules, tests, Docker, logging)
+
+
+WHAT DARSH DID
+--------------
+1. Built the FastAPI prediction service for predicting metres_per_shift.
+   - POST /predict takes exactly the 8 fields of PROBLEM.md section 5:
+     loom_age_yr, thread_count, power_cuts_min, weaver_exp_yr,
+     humidity_pct, shift_hours, fabric, shed.
+   - GET /health returns {"status": "ok"} (plus a model_loaded flag).
+   - The model is loaded once at start-up from models/model.joblib
+     (path can be changed with the MODEL_PATH environment variable).
+     If the model file is missing, /predict answers 503 instead of crashing.
+
+2. Put the client's two rules in the pydantic request schema (Field), so a
+   bad request gets status 422 and never reaches the model:
+   - power_cuts_min above 250 is rejected   (le=250)
+   - loom_age_yr below 0 is rejected        (ge=0)
+   Extra checks: fabric must be cotton / silk / polyester, shed must be
+   Shed 1 / Shed 2 / Shed 3, and the other numeric fields must be valid.
+
+3. Added JSON logging with the logging module: one JSON line per
+   prediction, written to stdout (never to a file), with the inputs, the
+   prediction and the time taken.
+
+4. Wrote 13 pytest tests (tests/test_api.py) using FastAPI TestClient.
+   They need no CSV files and no model file (a small fake model is used):
+   - /health returns ok
+   - a valid request returns a prediction
+   - power_cuts_min 251 and 1000 give 422; 250 is accepted
+   - negative loom_age_yr gives 422
+   - missing field and unknown fabric give 422
+   - missing model gives 503
+   - the JSON log formatter and the one-JSON-line-per-prediction log
+
+5. Wrote the Dockerfile (python:3.12-slim, requirements installed before
+   the code is copied, port 8000, uvicorn on 0.0.0.0:8000) and the
+   .dockerignore.
+
+6. Tested the service end to end with a real scikit-learn model: /health,
+   a valid /predict, and both client rules returning 422.
+
+
+FILES WRITTEN BY DARSH
+----------------------
+app/main.py          FastAPI app: schema with the client's rules, /health,
+                     /predict, model loading, JSON logging
+app/__init__.py      makes app a package so the tests can import it
+tests/test_api.py    13 tests, including TestClient tests
+pytest.ini           lets pytest find the app package (pythonpath = .)
+Dockerfile           container image for the service (image mp212-api:1.0)
+.dockerignore        keeps data, notebooks, tests and MLflow files out of
+                     the image
+DARSH_CONTRIBUTION.txt   this file
+
+
+WHAT THE SERVICE NEEDS FROM OTHER MEMBERS
+-----------------------------------------
+- models/model.joblib : a scikit-learn pipeline that takes a DataFrame with
+  the 8 request columns and does its own preprocessing (model lead).
+- requirements.txt    : must include fastapi, uvicorn, pydantic, httpx,
+  pytest, joblib, pandas and scikit-learn, with pinned versions.
+- .github/workflows/ci.yml : runs pytest (the API tests need no CSV files).
+
+
+HOW TO RUN
+----------
+  pip install -r requirements.txt
+  python -m pytest                                  (run the tests)
+  uvicorn app.main:app --port 8000                  (start the service)
+  docker build -t mp212-api:1.0 .                   (build the image)
